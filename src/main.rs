@@ -6,19 +6,17 @@ use std::string::ToString;
 use std::sync::Arc;
 
 use serenity::async_trait;
-use serenity::http::CacheHttp;
-use serenity::json::prelude::from_str;
 use serenity::model::channel::Message;
 use serenity::model::event::MessageUpdateEvent;
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, UserId};
+use serenity::model::prelude::GuildId;
 use serenity::model::user::User;
 use serenity::prelude::*;
-use serenity::utils::Guild;
 
 struct Handler;
 
-const VAGUELY_OKAY_WEBSITES: [&'static str; 7] = [
+const VAGUELY_OKAY_WEBSITES: [&str; 7] = [
     "github.com",
     "bitbucket.com",
     "stackoverflow.com",
@@ -42,8 +40,8 @@ fn is_suspicious_url(path: &str) -> bool {
     path.contains("http")
         // Not in any of our approved websites
         && (!(VAGUELY_OKAY_WEBSITES
-            .iter()
-            .any(|website| path.contains(website))))
+        .iter()
+        .any(|website| path.contains(website))))
 }
 
 fn has_mention(message: &Message) -> bool {
@@ -65,7 +63,7 @@ async fn warn_user(ctx: &Context, channel_id: ChannelId, user: &User) -> serenit
             format_args!(
                 "Hi {member}, please wait a while after joining before sharing links or mentioning people.",
                 member=user.mention()
-        ))
+            ))
     }).await
 }
 
@@ -80,12 +78,23 @@ async fn log_actions(ctx: &Context, content: &str, author_name: &str) -> serenit
         .await
 }
 
+async fn log_ban(ctx: &Context, author_name: &str) -> serenity::Result<Message> {
+    ChannelId::from(BOT_CHANNEL)
+        .send_message(&ctx.http, |builder| {
+            builder.content(format!(
+                "Hey bot team! '{}' posted in THE CHANNEL, so I deleted them :)",
+                author_name
+            ))
+        })
+        .await
+}
+
 async fn delete_message(ctx: &Context, message: &Message) -> serenity::Result<()> {
     message.delete(&ctx.http).await
 }
 
 async fn update_user_join_date(ctx: &Context, user: &User, join_date: i64) -> anyhow::Result<()> {
-    if let Some(_) = get_user_join_date(ctx, user).await {
+    if get_user_join_date(ctx, user).await.is_some() {
         Ok(())
     } else {
         let counter_lock = {
@@ -115,9 +124,9 @@ async fn get_user_join_date(ctx: &Context, user: &User) -> Option<i64> {
     user_date_info.get(&user.id).copied()
 }
 
-async fn ban_user(ctx: &Context, guild: &Guild, user: user_id) -> serenity::Result<()> {
-    guild
-        .ban_with_reason(&ctx.cache(), &user, 7, "Ban by bot honey potted :D")
+async fn ban_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
+    guild_id
+        .ban_with_reason(&ctx.http, user, 7, "Spam Channel honeypoint")
         .await
 }
 
@@ -129,7 +138,8 @@ impl EventHandler for Handler {
                 && msg.author.id != UserId::from(SPAM_EATER_ID)
             {
                 delete_message(&ctx, &msg).await.unwrap();
-                ban_user(&ctx, msg.guild().unwrap(), &msg.author)
+                log_ban(&ctx, msg.author.name.as_str()).await.unwrap();
+                ban_user(&ctx, &msg.guild_id.unwrap(), &msg.author.id)
                     .await
                     .unwrap();
             }
@@ -147,17 +157,17 @@ impl EventHandler for Handler {
                     {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Couldn't update User Info due to {}", e.to_string());
+                            println!("Couldn't update User Info due to {}", e);
                         }
                     }
-                    if is_suspicious_url(msg.content.as_str()) || has_mention(&msg) {
-                        if is_new_user(get_user_join_date(&ctx, &msg.author).await) {
-                            warn_user(&ctx, msg.channel_id, &msg.author).await.unwrap();
-                            delete_message(&ctx, &msg).await.unwrap();
-                            log_actions(&ctx, msg.content.as_str(), msg.author.name.as_str())
-                                .await
-                                .unwrap();
-                        }
+                    if (is_suspicious_url(msg.content.as_str()) || has_mention(&msg))
+                        && is_new_user(get_user_join_date(&ctx, &msg.author).await)
+                    {
+                        warn_user(&ctx, msg.channel_id, &msg.author).await.unwrap();
+                        delete_message(&ctx, &msg).await.unwrap();
+                        log_actions(&ctx, msg.content.as_str(), msg.author.name.as_str())
+                            .await
+                            .unwrap();
                     }
                 }
             }
@@ -169,17 +179,16 @@ impl EventHandler for Handler {
             if let Some(author) = new_data.author {
                 if is_suspicious_url(updated_content.as_str())
                     | new_data.mention_everyone.unwrap_or(false)
+                    && is_new_user(get_user_join_date(&ctx, &author).await)
                 {
-                    if is_new_user(get_user_join_date(&ctx, &author).await) {
-                        warn_user(&ctx, new_data.channel_id, &author).await.unwrap();
-                        ctx.http
-                            .delete_message(new_data.channel_id.into(), new_data.id.into())
-                            .await
-                            .unwrap();
-                        log_actions(&ctx, updated_content.as_str(), author.name.as_str())
-                            .await
-                            .unwrap();
-                    }
+                    warn_user(&ctx, new_data.channel_id, &author).await.unwrap();
+                    ctx.http
+                        .delete_message(new_data.channel_id.into(), new_data.id.into())
+                        .await
+                        .unwrap();
+                    log_actions(&ctx, updated_content.as_str(), author.name.as_str())
+                        .await
+                        .unwrap();
                 }
             }
         }
@@ -188,7 +197,7 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         ChannelId::from(BOT_CHANNEL)
             .send_message(&ctx.http, |builder| {
-                builder.content(format!("Hey bot team! I'm online!",))
+                builder.content("Hey bot team! I'm online!".to_string())
             })
             .await
             .unwrap();
