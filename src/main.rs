@@ -224,7 +224,7 @@ impl EventHandler for Handler {
 }
 
 async fn start_health_check() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    let listener = TcpListener::bind("0.0.0.0:8080").await?;
     loop {
         let (mut socket, _) = listener.accept().await?;
         tokio::spawn(async move {
