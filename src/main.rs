@@ -6,6 +6,7 @@ use std::string::ToString;
 use std::sync::Arc;
 
 use serenity::async_trait;
+use serenity::builder::CreateMessage;
 use serenity::model::channel::Message;
 use serenity::model::event::MessageUpdateEvent;
 use serenity::model::gateway::Ready;
@@ -13,6 +14,8 @@ use serenity::model::id::{ChannelId, UserId};
 use serenity::model::prelude::GuildId;
 use serenity::model::user::User;
 use serenity::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 struct Handler;
 
@@ -58,34 +61,37 @@ fn is_new_user(timestamp: Option<i64>) -> bool {
 }
 
 async fn warn_user(ctx: &Context, channel_id: ChannelId, user: &User) -> serenity::Result<Message> {
-    channel_id.send_message(&ctx.http, |m| {
-        m.content(
-            format_args!(
-                "Hi {member}, please wait a while after joining before sharing links or mentioning people.",
-                member=user.mention()
-            ))
-    }).await
+    let warning: String = format_args!(
+        "Hi {member}, please wait a while after joining before sharing links or mentioning people.",
+        member = user.mention()
+    )
+    .to_string();
+    channel_id
+        .send_message(&ctx.http, CreateMessage::new().content(warning))
+        .await
 }
 
 async fn log_actions(ctx: &Context, content: &str, author_name: &str) -> serenity::Result<Message> {
     ChannelId::from(BOT_CHANNEL)
-        .send_message(&ctx.http, |builder| {
-            builder.content(format!(
+        .send_message(
+            &ctx.http,
+            CreateMessage::new().content(format!(
                 "Hey bot team! I found '{}' from {} suspicious, so I deleted it. :)",
                 content, author_name
-            ))
-        })
+            )),
+        )
         .await
 }
 
 async fn log_ban(ctx: &Context, author_name: &str) -> serenity::Result<Message> {
     ChannelId::from(BOT_CHANNEL)
-        .send_message(&ctx.http, |builder| {
-            builder.content(format!(
+        .send_message(
+            &ctx.http,
+            CreateMessage::new().content(format!(
                 "Hey bot team! '{}' posted in THE CHANNEL, so I deleted them :)",
                 author_name
-            ))
-        })
+            )),
+        )
         .await
 }
 
@@ -174,34 +180,70 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn message_update(&self, ctx: Context, new_data: MessageUpdateEvent) {
-        if let Some(updated_content) = new_data.content {
-            if let Some(author) = new_data.author {
-                if is_suspicious_url(updated_content.as_str())
-                    | new_data.mention_everyone.unwrap_or(false)
-                    && is_new_user(get_user_join_date(&ctx, &author).await)
-                {
-                    warn_user(&ctx, new_data.channel_id, &author).await.unwrap();
-                    ctx.http
-                        .delete_message(new_data.channel_id.into(), new_data.id.into())
-                        .await
-                        .unwrap();
-                    log_actions(&ctx, updated_content.as_str(), author.name.as_str())
-                        .await
-                        .unwrap();
-                }
+    async fn message_update(
+        &self,
+        ctx: Context,
+        _old_if_available: Option<Message>,
+        new: Option<Message>,
+        _event: MessageUpdateEvent,
+    ) {
+        if let Some(updated_message) = new {
+            let author = updated_message.author;
+            if is_suspicious_url(updated_message.content.as_str())
+                | updated_message.mention_everyone
+                && is_new_user(get_user_join_date(&ctx, &author).await)
+            {
+                warn_user(&ctx, updated_message.channel_id, &author)
+                    .await
+                    .unwrap();
+                ctx.http
+                    .delete_message(
+                        updated_message.channel_id,
+                        updated_message.id,
+                        Some("Updated message with banned content"),
+                    )
+                    .await
+                    .unwrap();
+                log_actions(&ctx, updated_message.content.as_str(), author.name.as_str())
+                    .await
+                    .unwrap();
             }
         }
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         ChannelId::from(BOT_CHANNEL)
-            .send_message(&ctx.http, |builder| {
-                builder.content("Hey bot team! I'm online!".to_string())
-            })
+            .send_message(
+                &ctx.http,
+                CreateMessage::new().content("Hey bot team! I'm online!".to_string()),
+            )
             .await
             .unwrap();
         println!("{} is connected!", ready.user.name);
+    }
+}
+
+async fn start_health_check() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    loop {
+        let (mut socket, _) = listener.accept().await?;
+        tokio::spawn(async move {
+            let mut buffer = [0; 1024];
+
+            // Read the HTTP request from the socket
+            match socket.read(&mut buffer).await {
+                Ok(_) => {
+                    let request = String::from_utf8_lossy(&buffer);
+
+                    // Check if the request line contains a GET request to /health_check
+                    if request.starts_with("GET /health_check HTTP/1.1") {
+                        let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+                        let _ = socket.write_all(response.as_bytes()).await;
+                    }
+                },
+                Err(e) => eprintln!("Failed to read from socket: {:?}", e),
+            }
+        });
     }
 }
 
@@ -223,6 +265,12 @@ async fn main() {
         let mut data = client.data.write().await;
         data.insert::<UserJoinDate>(Arc::new(RwLock::new(HashMap::default())));
     }
+
+    tokio::spawn(async {
+        if let Err(e) = start_health_check().await {
+            eprintln!("Health check service failed: {}", e);
+        }
+    });
 
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
