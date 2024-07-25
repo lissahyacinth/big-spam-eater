@@ -1,16 +1,8 @@
-FROM rust:buster as build
-
-ENV TZ=Europe/London
+FROM rust:alpine as build
 
 WORKDIR /app
 
-RUN apt update -y && \
-    apt install -y \
-    curl \
-    build-essential \
-    libssl1.0 && \
-    apt-get clean &&\
-    rm -rf /var/lib/apt/lists/* 
+RUN apk add --update alpine-sdk
 
 RUN mkdir -p /app
 
@@ -20,5 +12,8 @@ COPY Cargo.lock /app/Cargo.lock
 
 RUN cargo build --release
 
-ENTRYPOINT [ "cargo" ]
-CMD ["run", "--release"]
+FROM rust:alpine as prod
+
+COPY --from=build /app/target/release/spam_blocker /bin/spam_blocker
+
+ENTRYPOINT [ "spam_blocker" ]
