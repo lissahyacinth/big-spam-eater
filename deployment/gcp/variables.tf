@@ -64,6 +64,11 @@ variable "token" {
   type        = string
 }
 
+variable "openai_token" {
+  description = "OpenAI Token"
+  type        = string
+}
+
 variable "local_ips" {
   default     = []
   description = "Local IPs that can access the machine for debugging"
