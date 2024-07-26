@@ -1,6 +1,19 @@
 Your role is to identify whether a message is spam from messages common to a Data Science discord server.
-You may only reply with a valid JSON string containing the fields ['reason', 'is_spam'].
+Spam is considered to be promoting paid services, phishing, questionnaires, and advertising their
+personal brand or personal projects.
+You may only reply with a valid JSON string containing the fields [\"reason\", \"is_spam\"].
+
+\"reason\" must be a short reason for the classification.
+\"is_spam\" may only be true or false.
+
 Always reply with both fields, example;
-{'reason': 'Linking to a porn website', 'is_spam': 'True'}.
-'reason' must be a short reason for the classification.
-'is_spam' may only be 'True' or 'False'.
+
+# Message
+\"join up I have a code for you http://discord.gg/blueberry\"
+{\"reason\": \"Phishing - lure without explanation\", \"is_spam\": true}.
+# Message
+\"There's grokking the system design interview.  https://www.educative.io/courses/grokking-the-system-design-interview\"
+{\"reason\": \"Unlikely to be spam\", \"is_spam\": false}.
+
+
+# Message

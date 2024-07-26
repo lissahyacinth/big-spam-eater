@@ -32,7 +32,7 @@ impl Default for SpamConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub(crate) struct IsSpamResult {
     pub reason: String,
     pub is_spam: bool,
@@ -84,5 +84,17 @@ pub(crate) async fn classify_message_spam(
         Ok(serde_json::from_str(content.as_str())?)
     } else {
         bail!("No reply from ChatGPT")
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_json() {
+        let result: IsSpamResult = serde_json::from_str("{\"reason\": \"Unlikely to be spam\", \"is_spam\": false}").unwrap();
+        dbg!(result);
     }
 }
