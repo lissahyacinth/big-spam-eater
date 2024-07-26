@@ -19,9 +19,9 @@ This is pretty simplistic - we're capturing the token within a variable and so i
 
 | Name | Version |
 |------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | 5.21.0 |
-| <a name="provider_local"></a> [local](#provider\_local) | 2.5.1 |
-| <a name="provider_random"></a> [random](#provider\_random) | 3.6.2 |
+| <a name="provider_google"></a> [google](#provider\_google) | ~> 5.21.0 |
+| <a name="provider_local"></a> [local](#provider\_local) | n/a |
+| <a name="provider_random"></a> [random](#provider\_random) | n/a |
 
 ## Modules
 
@@ -37,6 +37,8 @@ This is pretty simplistic - we're capturing the token within a variable and so i
 | [google_compute_firewall.firewall-ssh](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall) | resource |
 | [google_compute_instance.vm](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_instance) | resource |
 | [google_secret_manager_secret.discord_token_basic](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/secret_manager_secret) | resource |
+| [google_secret_manager_secret.openai_token_basic](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/secret_manager_secret) | resource |
+| [google_secret_manager_secret_version.openai_token_version](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/secret_manager_secret_version) | resource |
 | [google_secret_manager_secret_version.token_version](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/secret_manager_secret_version) | resource |
 | [google_service_account.compute_account](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/service_account) | resource |
 | [google_storage_bucket.default](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket) | resource |
@@ -53,6 +55,7 @@ This is pretty simplistic - we're capturing the token within a variable and so i
 | <a name="input_labels"></a> [labels](#input\_labels) | Labels for deployed instance | `map(any)` | `{}` | no |
 | <a name="input_local_ips"></a> [local\_ips](#input\_local\_ips) | Local IPs that can access the machine for debugging | `list(string)` | `[]` | no |
 | <a name="input_machine_type"></a> [machine\_type](#input\_machine\_type) | GCP Machine Type | `string` | `"e2-micro"` | no |
+| <a name="input_openai_token"></a> [openai\_token](#input\_openai\_token) | OpenAI Token | `string` | n/a | yes |
 | <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The project ID to deploy resources into | `string` | n/a | yes |
 | <a name="input_region"></a> [region](#input\_region) | The GCP region to deploy instances into | `string` | n/a | yes |
 | <a name="input_token"></a> [token](#input\_token) | Discord Token | `string` | n/a | yes |

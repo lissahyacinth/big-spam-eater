@@ -1,10 +1,13 @@
-use chrono::{Duration, TimeZone, Utc};
-use dotenv::dotenv;
 use std::collections::HashMap;
 use std::env;
 use std::string::ToString;
 use std::sync::Arc;
 
+use crate::clean_messages::clean_message;
+use crate::spam_detection::classify_message_spam;
+use chrono::{Duration, TimeZone, Utc};
+use dotenv::dotenv;
+use serenity::all::Timestamp;
 use serenity::async_trait;
 use serenity::builder::CreateMessage;
 use serenity::model::channel::Message;
@@ -16,6 +19,9 @@ use serenity::model::user::User;
 use serenity::prelude::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+
+mod clean_messages;
+mod spam_detection;
 
 struct Handler;
 
@@ -39,16 +45,18 @@ impl TypeMapKey for UserJoinDate {
     type Value = Arc<RwLock<HashMap<UserId, i64>>>;
 }
 
+enum MessageClassification {
+    Normal,
+    MaybeSpam,
+    DefinitelySpam(String),
+}
+
 fn is_suspicious_url(path: &str) -> bool {
     path.contains("http")
         // Not in any of our approved websites
         && (!(VAGUELY_OKAY_WEBSITES
         .iter()
         .any(|website| path.contains(website))))
-}
-
-fn has_mention(message: &Message) -> bool {
-    message.mention_everyone
 }
 
 fn is_new_user(timestamp: Option<i64>) -> bool {
@@ -60,10 +68,45 @@ fn is_new_user(timestamp: Option<i64>) -> bool {
     }
 }
 
-async fn warn_user(ctx: &Context, channel_id: ChannelId, user: &User) -> serenity::Result<Message> {
+async fn warn_user_generic(
+    ctx: &Context,
+    channel_id: ChannelId,
+    user: &User,
+) -> serenity::Result<Message> {
+    warn_user_with_message(
+        ctx,
+        channel_id,
+        user,
+        "please wait a while after joining before sharing links or mentioning people.".to_string(),
+    )
+    .await
+}
+
+async fn warn_user_with_reason(
+    ctx: &Context,
+    channel_id: ChannelId,
+    user: &User,
+    reason: &str,
+) -> serenity::Result<Message> {
+    warn_user_with_message(
+        ctx,
+        channel_id,
+        user,
+        format!(" - this was removed because the message is considered to be `{reason}`"),
+    )
+    .await
+}
+
+async fn warn_user_with_message(
+    ctx: &Context,
+    channel_id: ChannelId,
+    user: &User,
+    message: String,
+) -> serenity::Result<Message> {
     let warning: String = format_args!(
-        "Hi {member}, please wait a while after joining before sharing links or mentioning people.",
-        member = user.mention()
+        "Hi {member}, {message}",
+        member = user.mention(),
+        message = message
     )
     .to_string();
     channel_id
@@ -71,13 +114,32 @@ async fn warn_user(ctx: &Context, channel_id: ChannelId, user: &User) -> serenit
         .await
 }
 
-async fn log_actions(ctx: &Context, content: &str, author_name: &str) -> serenity::Result<Message> {
+async fn log_actions(
+    ctx: &Context,
+    content: &str,
+    author_name: &str,
+    reason: Option<&str>,
+    timeout: bool,
+) -> serenity::Result<Message> {
+    let formatted_reason = match reason {
+        None => "".to_string(),
+        Some(reason) => format!(" because `{}`", reason),
+    };
+    let actions_taken = if timeout {
+        " and timed them out until tomorrow"
+    } else {
+        ""
+    }
+    .to_string();
     ChannelId::from(BOT_CHANNEL)
         .send_message(
             &ctx.http,
             CreateMessage::new().content(format!(
-                "Hey bot team! I found '{}' from {} suspicious, so I deleted it. :)",
-                content, author_name
+                "Hey bot team! I found '{}' from {} suspicious{}, so I deleted it{}. :)",
+                clean_message(content),
+                author_name,
+                formatted_reason,
+                actions_taken
             )),
         )
         .await
@@ -99,10 +161,8 @@ async fn delete_message(ctx: &Context, message: &Message) -> serenity::Result<()
     message.delete(&ctx.http).await
 }
 
-async fn update_user_join_date(ctx: &Context, user: &User, join_date: i64) -> anyhow::Result<()> {
-    if get_user_join_date(ctx, user).await.is_some() {
-        Ok(())
-    } else {
+async fn update_user_join_date(ctx: &Context, user: &User, join_date: i64) {
+    if get_user_join_date(ctx, user).await.is_none() {
         let counter_lock = {
             let data_read = ctx.data.read().await;
             data_read
@@ -114,7 +174,6 @@ async fn update_user_join_date(ctx: &Context, user: &User, join_date: i64) -> an
             let mut counter = counter_lock.write().await;
             let _ = counter.entry(user.id).or_insert(join_date);
         }
-        Ok(())
     }
 }
 
@@ -132,8 +191,108 @@ async fn get_user_join_date(ctx: &Context, user: &User) -> Option<i64> {
 
 async fn ban_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
     guild_id
-        .ban_with_reason(&ctx.http, user, 7, "Spam Channel honeypoint")
+        .ban_with_reason(&ctx.http, user, 7, "Spam Channel honeypot")
         .await
+}
+
+async fn timeout_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
+    guild_id
+        .member(ctx, user)
+        .await?
+        .disable_communication_until_datetime(
+            ctx,
+            Timestamp::from_unix_timestamp(
+                Timestamp::now().unix_timestamp() + Duration::days(1).num_seconds(),
+            )
+            .unwrap(),
+        )
+        .await
+}
+
+async fn is_message_suspicious(
+    message: &Message,
+    user_join_date: Option<i64>,
+) -> MessageClassification {
+    if (is_suspicious_url(message.content.as_str()) | message.mention_everyone)
+        && is_new_user(user_join_date)
+    {
+        // TODO: Track the context of user messages
+        match classify_message_spam(message.content.clone(), vec![]).await {
+            Ok(classification) => {
+                if classification.is_spam {
+                    MessageClassification::DefinitelySpam(classification.reason)
+                } else {
+                    MessageClassification::Normal
+                }
+            }
+            Err(_) => MessageClassification::MaybeSpam,
+        }
+    } else {
+        MessageClassification::Normal
+    }
+}
+
+async fn remove_message_and_log(ctx: Context, message: Message) -> anyhow::Result<()> {
+    warn_user_generic(&ctx, message.channel_id, &message.author)
+        .await
+        .unwrap();
+    ctx.http
+        .delete_message(
+            message.channel_id,
+            message.id,
+            Some("Updated message with banned content"),
+        )
+        .await
+        .unwrap();
+    log_actions(
+        &ctx,
+        message.content.as_str(),
+        message.author.name.as_str(),
+        None,
+        false,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn remove_warn_timeout_and_log(
+    ctx: Context,
+    message: Message,
+    reason: &str,
+) -> anyhow::Result<()> {
+    warn_user_with_reason(&ctx, message.channel_id, &message.author, reason).await?;
+    ctx.http
+        .delete_message(
+            message.channel_id,
+            message.id,
+            Some("Message with banned content"),
+        )
+        .await
+        .unwrap();
+    timeout_user(&ctx, &message.guild_id.unwrap(), &message.author.id).await?;
+    log_actions(
+        &ctx,
+        message.content.as_str(),
+        message.author.name.as_str(),
+        Some(reason),
+        true,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn handle_message(ctx: Context, message: Message) {
+    match is_message_suspicious(&message, get_user_join_date(&ctx, &message.author).await).await {
+        MessageClassification::Normal => {}
+        MessageClassification::MaybeSpam => {
+            remove_message_and_log(ctx, message.clone()).await.unwrap()
+        }
+        MessageClassification::DefinitelySpam(reason) => {
+            remove_warn_timeout_and_log(ctx, message.clone(), reason.as_str())
+                .await
+                .unwrap()
+        }
+    }
 }
 
 #[async_trait]
@@ -154,27 +313,13 @@ impl EventHandler for Handler {
                     println!("Couldn't find MemberInfo for {:?}", msg.author);
                 }
                 Some(ref member_info) => {
-                    match update_user_join_date(
+                    update_user_join_date(
                         &ctx,
                         &msg.author,
                         member_info.joined_at.unwrap().unix_timestamp(),
                     )
-                    .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!("Couldn't update User Info due to {}", e);
-                        }
-                    }
-                    if (is_suspicious_url(msg.content.as_str()) || has_mention(&msg))
-                        && is_new_user(get_user_join_date(&ctx, &msg.author).await)
-                    {
-                        warn_user(&ctx, msg.channel_id, &msg.author).await.unwrap();
-                        delete_message(&ctx, &msg).await.unwrap();
-                        log_actions(&ctx, msg.content.as_str(), msg.author.name.as_str())
-                            .await
-                            .unwrap();
-                    }
+                    .await;
+                    handle_message(ctx, msg).await;
                 }
             }
         }
@@ -188,26 +333,7 @@ impl EventHandler for Handler {
         _event: MessageUpdateEvent,
     ) {
         if let Some(updated_message) = new {
-            let author = updated_message.author;
-            if is_suspicious_url(updated_message.content.as_str())
-                | updated_message.mention_everyone
-                && is_new_user(get_user_join_date(&ctx, &author).await)
-            {
-                warn_user(&ctx, updated_message.channel_id, &author)
-                    .await
-                    .unwrap();
-                ctx.http
-                    .delete_message(
-                        updated_message.channel_id,
-                        updated_message.id,
-                        Some("Updated message with banned content"),
-                    )
-                    .await
-                    .unwrap();
-                log_actions(&ctx, updated_message.content.as_str(), author.name.as_str())
-                    .await
-                    .unwrap();
-            }
+            handle_message(ctx, updated_message).await;
         }
     }
 
@@ -240,7 +366,7 @@ async fn start_health_check() -> Result<(), Box<dyn std::error::Error>> {
                         let response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
                         let _ = socket.write_all(response.as_bytes()).await;
                     }
-                },
+                }
                 Err(e) => eprintln!("Failed to read from socket: {:?}", e),
             }
         });

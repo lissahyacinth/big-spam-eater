@@ -27,8 +27,13 @@ module "gce-container" {
     env = [
       {
         name  = "DISCORD_TOKEN"
-        value = google_secret_manager_secret_version.token_version.secret_data
-    }]
+        value = google_secret_manager_secret_version.token_version.secret_data,
+      },
+      {
+        name  = "OPENAI_KEY"
+        value = google_secret_manager_secret_version.openai_token_version.secret_data,
+      }
+    ]
     volumeMounts = []
   }
 
