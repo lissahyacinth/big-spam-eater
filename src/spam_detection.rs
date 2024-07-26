@@ -87,14 +87,15 @@ pub(crate) async fn classify_message_spam(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn parse_json() {
-        let result: IsSpamResult = serde_json::from_str("{\"reason\": \"Unlikely to be spam\", \"is_spam\": false}").unwrap();
+        let result: IsSpamResult =
+            serde_json::from_str("{\"reason\": \"Unlikely to be spam\", \"is_spam\": false}")
+                .unwrap();
         dbg!(result);
     }
 }

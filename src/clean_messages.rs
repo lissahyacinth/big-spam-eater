@@ -1,7 +1,6 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 
-
 lazy_static! {
     static ref TLD_REGEX: Regex = {
         let common_tlds: [&str; 20] = [

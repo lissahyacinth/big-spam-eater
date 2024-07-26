@@ -225,9 +225,7 @@ async fn is_message_suspicious(
                     MessageClassification::Normal
                 }
             }
-            Err(_) => {
-                MessageClassification::MaybeSpam
-            },
+            Err(_) => MessageClassification::MaybeSpam,
         }
     } else {
         MessageClassification::Normal
