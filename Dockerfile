@@ -2,11 +2,15 @@ FROM rust:alpine as build
 
 WORKDIR /app
 
-RUN apk add --update alpine-sdk
+RUN apk add --update \
+    alpine-sdk \
+    openssl \
+    libressl-dev
 
 RUN mkdir -p /app
 
 COPY src /app/src
+COPY prompts /app/prompts
 COPY Cargo.toml /app/Cargo.toml
 COPY Cargo.lock /app/Cargo.lock
 
