@@ -1,17 +1,11 @@
 use anyhow::bail;
-use config::Config;
 use lazy_static::lazy_static;
 use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageRole};
 use serde::Deserialize;
 
 lazy_static! {
     static ref SPAM_CONFIG: SpamConfig = {
-        Config::builder()
-            .add_source(config::Environment::default())
-            .build()
-            .expect("Could not build SpamConfig")
-            .try_deserialize()
-            .expect("Could not deserialize into SpamConfig")
+        SpamConfig::default()
     };
 }
 
@@ -77,8 +71,7 @@ pub(crate) async fn classify_message_spam(
 ) -> anyhow::Result<IsSpamResult> {
     let chat_completion = ChatCompletion::builder("gpt-4o-mini", build_message(message, context))
         .create()
-        .await
-        .unwrap();
+        .await?;
     let returned_message = chat_completion.choices.first().unwrap().message.clone();
     if let Some(content) = returned_message.content {
         Ok(serde_json::from_str(content.as_str())?)
