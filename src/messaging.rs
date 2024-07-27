@@ -187,4 +187,5 @@ pub async fn remove_warn_timeout_and_log(
 
 pub fn message_discusses_roadmaps(message: &Message) -> bool {
     message.content.to_lowercase().contains("roadmap")
+        | message.content.to_lowercase().contains("road map")
 }

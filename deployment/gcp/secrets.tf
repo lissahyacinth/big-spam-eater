@@ -29,5 +29,5 @@ resource "google_secret_manager_secret" "openai_token_basic" {
 
 resource "google_secret_manager_secret_version" "openai_token_version" {
   secret      = google_secret_manager_secret.openai_token_basic.id
-  secret_data = var.token
+  secret_data = var.openai_token
 }

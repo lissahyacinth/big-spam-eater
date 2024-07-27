@@ -4,9 +4,7 @@ use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageR
 use serde::Deserialize;
 
 lazy_static! {
-    static ref SPAM_CONFIG: SpamConfig = {
-        SpamConfig::default()
-    };
+    static ref SPAM_CONFIG: SpamConfig = SpamConfig::default();
 }
 
 static SPAM_PROMPT: &str = include_str!("../prompts/spam_role.txt");

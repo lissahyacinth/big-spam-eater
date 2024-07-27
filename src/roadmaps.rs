@@ -2,11 +2,10 @@ use anyhow::bail;
 use lazy_static::lazy_static;
 use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageRole};
 use serde::Deserialize;
+use tracing::info;
 
 lazy_static! {
-    static ref ROADMAP_CONFIG: RoadmapConfig = {
-        RoadmapConfig::default()
-    };
+    static ref ROADMAP_CONFIG: RoadmapConfig = RoadmapConfig::default();
 }
 
 static DETECT_ROADMAP_PROMPT: &str = include_str!("../prompts/detect_roadmap.txt");
@@ -92,13 +91,27 @@ pub(crate) async fn is_message_roadmap_request(
 ) -> anyhow::Result<RequestingRoadmap> {
     let chat_completion = ChatCompletion::builder(
         "gpt-4o-mini",
-        build_message(message, context, system_message_detection()),
+        build_message(message.clone(), context, system_message_detection()),
     )
     .create()
     .await?;
     let returned_message = chat_completion.choices.first().unwrap().message.clone();
     if let Some(content) = returned_message.content {
-        Ok(serde_json::from_str(content.as_str())?)
+        let roadmap_request: RequestingRoadmap = serde_json::from_str(content.as_str())?;
+        if roadmap_request.is_roadmap {
+            info!(
+                "Generating roadmap for request {} due to {}",
+                message.as_str(),
+                roadmap_request.reason.as_str()
+            );
+        } else {
+            info!(
+                "Ignoring roadmap request {} due to {}",
+                message.as_str(),
+                roadmap_request.reason.as_str()
+            );
+        }
+        Ok(roadmap_request)
     } else {
         bail!("No reply from ChatGPT")
     }
@@ -116,24 +129,23 @@ pub(crate) async fn create_roadmap(
     .await?;
     let returned_message = chat_completion.choices.first().unwrap().message.clone();
     if let Some(content) = returned_message.content {
-        Ok(RoadmapProvided {
-            roadmap: content,
-        })
+        info!("Generated Roadmap - {}", content.as_str());
+        Ok(RoadmapProvided { roadmap: content })
     } else {
         bail!("No reply from ChatGPT")
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::env;
-    use dotenv::dotenv;
-    use openai::set_key;
     use super::*;
 
     #[test]
     fn emit_prompt() {
-        dbg!(build_message("I'd like a roadmap".to_string(), vec![], system_message_creation()));
+        dbg!(build_message(
+            "I'd like a roadmap".to_string(),
+            vec![],
+            system_message_creation()
+        ));
     }
 }
