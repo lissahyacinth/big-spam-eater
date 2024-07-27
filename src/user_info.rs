@@ -139,7 +139,7 @@ pub async fn retrieve_user_context(ctx: &Context, message: &Message) -> Vec<Stri
     {
         let all_users_context = context_lock.read().await;
         if let Some(user_context) = all_users_context.get(&message.author.id) {
-            user_context.context(message.timestamp, Duration::minutes(5))
+            user_context.context(message.timestamp, Duration::minutes(1))
         } else {
             vec![]
         }

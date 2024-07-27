@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::env;
-use std::string::ToString;
 use std::sync::Arc;
 
+use crate::chunking::chunk_string;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
 use crate::user_info::retrieve_user_context;
@@ -17,15 +17,15 @@ use serenity::model::id::{ChannelId, UserId};
 use serenity::prelude::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tracing::{error, info};
 use user_info::{UserContext, UserJoinDate};
-use crate::chunking::chunk_string;
 
+mod chunking;
 mod clean_messages;
 mod messaging;
 mod roadmaps;
 mod spam_detection;
 mod user_info;
-mod chunking;
 
 struct Handler;
 
@@ -43,6 +43,7 @@ const BOT_CHANNEL: u64 = 1091681853603324047;
 const HONEY_POT_CHANNEL: u64 = 889466095810011137;
 const SPAM_EATER_ID: u64 = 1091478027264868422;
 
+#[derive(Debug)]
 enum MessageClassification {
     Normal,
     MaybeSpam,
@@ -62,6 +63,7 @@ async fn is_message_suspicious(
                 if classification.is_spam {
                     MessageClassification::DefinitelySpam(classification.reason)
                 } else {
+                    info!("Message hit filter, not considered suspicious.");
                     MessageClassification::Normal
                 }
             }
@@ -73,12 +75,16 @@ async fn is_message_suspicious(
 }
 
 async fn handle_roadmap(ctx: Context, message: Message) -> anyhow::Result<()> {
-    if is_message_roadmap_request(message.content.clone(), vec![]).await?.is_roadmap {
+    if is_message_roadmap_request(message.content.clone(), vec![])
+        .await?
+        .is_roadmap
+    {
         let user_context = retrieve_user_context(&ctx, &message).await;
         let created_roadmap = create_roadmap(message.content.clone(), user_context).await?;
         let formatted_message = format!(
             "Hi {}, \n {}",
-            message.author.name, created_roadmap.roadmap
+            message.author.mention(),
+            created_roadmap.roadmap
         );
         for chunk in chunk_string(formatted_message.as_str(), 1_950) {
             message
@@ -99,11 +105,19 @@ async fn handle_message(ctx: Context, message: Message) {
     {
         MessageClassification::Normal => {}
         MessageClassification::MaybeSpam => {
+            info!(
+                "Removing message - likely spam - {}",
+                message.content.as_str()
+            );
             messaging::remove_message_and_log(&ctx, message.clone())
                 .await
                 .unwrap()
         }
         MessageClassification::DefinitelySpam(reason) => {
+            info!(
+                "Removing message - definitely spam - {}",
+                message.content.as_str()
+            );
             messaging::remove_warn_timeout_and_log(&ctx, message.clone(), reason.as_str())
                 .await
                 .unwrap()
@@ -111,7 +125,7 @@ async fn handle_message(ctx: Context, message: Message) {
     }
     if messaging::message_discusses_roadmaps(&message) {
         if let Err(e) = handle_roadmap(ctx, message).await {
-            println!("Failed to create Roadmap due to {e}")
+            error!("Failed to create Roadmap due to {e}")
         }
     }
 }
@@ -123,6 +137,7 @@ impl EventHandler for Handler {
             && msg.author.id != UserId::from(SPAM_EATER_ID)
         {
             if msg.channel_id == ChannelId::from(HONEY_POT_CHANNEL) {
+                info!("Received message in Honeypot channel - removing");
                 messaging::delete_message(&ctx, &msg).await.unwrap();
                 messaging::log_ban(&ctx, msg.author.name.as_str())
                     .await
@@ -134,7 +149,7 @@ impl EventHandler for Handler {
             user_info::update_user_context(&ctx, &msg).await;
             match msg.member {
                 None => {
-                    println!("Couldn't find MemberInfo for {:?}", msg.author);
+                    error!("Couldn't find MemberInfo for {:?}", msg.author);
                 }
                 Some(ref member_info) => {
                     user_info::update_user_join_date(
@@ -161,15 +176,8 @@ impl EventHandler for Handler {
         }
     }
 
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        ChannelId::from(BOT_CHANNEL)
-            .send_message(
-                &ctx.http,
-                CreateMessage::new().content("Hey bot team! I'm online!".to_string()),
-            )
-            .await
-            .unwrap();
-        println!("{} is connected!", ready.user.name);
+    async fn ready(&self, _: Context, ready: Ready) {
+        info!("{} is connected!", ready.user.name);
     }
 }
 
@@ -200,6 +208,7 @@ async fn start_health_check() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+    tracing_subscriber::fmt::init();
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let openai_key = env::var("OPENAI_KEY").expect("Expected an OpenAI Key in the environment");
