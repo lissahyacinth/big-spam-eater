@@ -3,25 +3,29 @@ use std::env;
 use std::string::ToString;
 use std::sync::Arc;
 
-use crate::clean_messages::clean_message;
+use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
-use chrono::{Duration, TimeZone, Utc};
+use crate::user_info::retrieve_user_context;
 use dotenv::dotenv;
-use serenity::all::Timestamp;
+use openai::set_key;
 use serenity::async_trait;
 use serenity::builder::CreateMessage;
 use serenity::model::channel::Message;
 use serenity::model::event::MessageUpdateEvent;
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, UserId};
-use serenity::model::prelude::GuildId;
-use serenity::model::user::User;
 use serenity::prelude::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use user_info::{UserContext, UserJoinDate};
+use crate::chunking::chunk_string;
 
 mod clean_messages;
+mod messaging;
+mod roadmaps;
 mod spam_detection;
+mod user_info;
+mod chunking;
 
 struct Handler;
 
@@ -39,182 +43,18 @@ const BOT_CHANNEL: u64 = 1091681853603324047;
 const HONEY_POT_CHANNEL: u64 = 889466095810011137;
 const SPAM_EATER_ID: u64 = 1091478027264868422;
 
-struct UserJoinDate;
-
-impl TypeMapKey for UserJoinDate {
-    type Value = Arc<RwLock<HashMap<UserId, i64>>>;
-}
-
 enum MessageClassification {
     Normal,
     MaybeSpam,
     DefinitelySpam(String),
 }
 
-fn is_suspicious_url(path: &str) -> bool {
-    path.contains("http")
-        // Not in any of our approved websites
-        && (!(VAGUELY_OKAY_WEBSITES
-        .iter()
-        .any(|website| path.contains(website))))
-}
-
-fn is_new_user(timestamp: Option<i64>) -> bool {
-    if let Some(time) = timestamp {
-        let diff: Duration = Utc::now() - Utc.timestamp_millis_opt(time * 1_000).unwrap();
-        diff.num_hours() <= 1
-    } else {
-        true
-    }
-}
-
-async fn warn_user_generic(
-    ctx: &Context,
-    channel_id: ChannelId,
-    user: &User,
-) -> serenity::Result<Message> {
-    warn_user_with_message(
-        ctx,
-        channel_id,
-        user,
-        "please wait a while after joining before sharing links or mentioning people.".to_string(),
-    )
-    .await
-}
-
-async fn warn_user_with_reason(
-    ctx: &Context,
-    channel_id: ChannelId,
-    user: &User,
-    reason: &str,
-) -> serenity::Result<Message> {
-    warn_user_with_message(
-        ctx,
-        channel_id,
-        user,
-        format!(" - this was removed because the message is considered to be `{reason}`"),
-    )
-    .await
-}
-
-async fn warn_user_with_message(
-    ctx: &Context,
-    channel_id: ChannelId,
-    user: &User,
-    message: String,
-) -> serenity::Result<Message> {
-    let warning: String = format_args!(
-        "Hi {member}, {message}",
-        member = user.mention(),
-        message = message
-    )
-    .to_string();
-    channel_id
-        .send_message(&ctx.http, CreateMessage::new().content(warning))
-        .await
-}
-
-async fn log_actions(
-    ctx: &Context,
-    content: &str,
-    author_name: &str,
-    reason: Option<&str>,
-    timeout: bool,
-) -> serenity::Result<Message> {
-    let formatted_reason = match reason {
-        None => "".to_string(),
-        Some(reason) => format!(" because `{}`", reason),
-    };
-    let actions_taken = if timeout {
-        " and timed them out until tomorrow"
-    } else {
-        ""
-    }
-    .to_string();
-    ChannelId::from(BOT_CHANNEL)
-        .send_message(
-            &ctx.http,
-            CreateMessage::new().content(format!(
-                "Hey bot team! I found '{}' from {} suspicious{}, so I deleted it{}. :)",
-                clean_message(content),
-                author_name,
-                formatted_reason,
-                actions_taken
-            )),
-        )
-        .await
-}
-
-async fn log_ban(ctx: &Context, author_name: &str) -> serenity::Result<Message> {
-    ChannelId::from(BOT_CHANNEL)
-        .send_message(
-            &ctx.http,
-            CreateMessage::new().content(format!(
-                "Hey bot team! '{}' posted in THE CHANNEL, so I deleted them :)",
-                author_name
-            )),
-        )
-        .await
-}
-
-async fn delete_message(ctx: &Context, message: &Message) -> serenity::Result<()> {
-    message.delete(&ctx.http).await
-}
-
-async fn update_user_join_date(ctx: &Context, user: &User, join_date: i64) {
-    if get_user_join_date(ctx, user).await.is_none() {
-        let counter_lock = {
-            let data_read = ctx.data.read().await;
-            data_read
-                .get::<UserJoinDate>()
-                .expect("Expected UserJoinDate in TypeMap.")
-                .clone()
-        };
-        {
-            let mut counter = counter_lock.write().await;
-            let _ = counter.entry(user.id).or_insert(join_date);
-        }
-    }
-}
-
-async fn get_user_join_date(ctx: &Context, user: &User) -> Option<i64> {
-    let counter_lock = {
-        let data_read = ctx.data.read().await;
-        data_read
-            .get::<UserJoinDate>()
-            .expect("Expected UserJoinDate in TypeMap.")
-            .clone()
-    };
-    let user_date_info = counter_lock.read().await;
-    user_date_info.get(&user.id).copied()
-}
-
-async fn ban_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
-    guild_id
-        .ban_with_reason(&ctx.http, user, 7, "Spam Channel honeypot")
-        .await
-}
-
-async fn timeout_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
-    guild_id
-        .member(ctx, user)
-        .await?
-        .disable_communication_until_datetime(
-            ctx,
-            Timestamp::from_unix_timestamp(
-                Timestamp::now().unix_timestamp() + Duration::days(1).num_seconds(),
-            )
-            .unwrap(),
-        )
-        .await
-}
-
 async fn is_message_suspicious(
     message: &Message,
     user_join_date: Option<i64>,
 ) -> MessageClassification {
-    if (is_suspicious_url(message.content.as_str()) | message.mention_everyone)
-        && is_new_user(user_join_date)
+    if (messaging::is_suspicious_url(message.content.as_str()) | message.mention_everyone)
+        && messaging::is_new_user(user_join_date)
     {
         // TODO: Track the context of user messages
         match classify_message_spam(message.content.clone(), vec![]).await {
@@ -232,65 +72,46 @@ async fn is_message_suspicious(
     }
 }
 
-async fn remove_message_and_log(ctx: Context, message: Message) -> anyhow::Result<()> {
-    warn_user_generic(&ctx, message.channel_id, &message.author)
-        .await
-        .unwrap();
-    ctx.http
-        .delete_message(
-            message.channel_id,
-            message.id,
-            Some("Updated message with banned content"),
-        )
-        .await
-        .unwrap();
-    log_actions(
-        &ctx,
-        message.content.as_str(),
-        message.author.name.as_str(),
-        None,
-        false,
-    )
-    .await?;
-    Ok(())
-}
-
-async fn remove_warn_timeout_and_log(
-    ctx: Context,
-    message: Message,
-    reason: &str,
-) -> anyhow::Result<()> {
-    warn_user_with_reason(&ctx, message.channel_id, &message.author, reason).await?;
-    ctx.http
-        .delete_message(
-            message.channel_id,
-            message.id,
-            Some("Message with banned content"),
-        )
-        .await
-        .unwrap();
-    timeout_user(&ctx, &message.guild_id.unwrap(), &message.author.id).await?;
-    log_actions(
-        &ctx,
-        message.content.as_str(),
-        message.author.name.as_str(),
-        Some(reason),
-        true,
-    )
-    .await?;
+async fn handle_roadmap(ctx: Context, message: Message) -> anyhow::Result<()> {
+    if is_message_roadmap_request(message.content.clone(), vec![]).await?.is_roadmap {
+        let user_context = retrieve_user_context(&ctx, &message).await;
+        let created_roadmap = create_roadmap(message.content.clone(), user_context).await?;
+        let formatted_message = format!(
+            "Hi {}, \n {}",
+            message.author.name, created_roadmap.roadmap
+        );
+        for chunk in chunk_string(formatted_message.as_str(), 1_950) {
+            message
+                .channel_id
+                .send_message(&ctx.http, CreateMessage::new().content(chunk))
+                .await?;
+        }
+    }
     Ok(())
 }
 
 async fn handle_message(ctx: Context, message: Message) {
-    match is_message_suspicious(&message, get_user_join_date(&ctx, &message.author).await).await {
+    match is_message_suspicious(
+        &message,
+        user_info::get_user_join_date(&ctx, &message.author).await,
+    )
+    .await
+    {
         MessageClassification::Normal => {}
         MessageClassification::MaybeSpam => {
-            remove_message_and_log(ctx, message.clone()).await.unwrap()
-        }
-        MessageClassification::DefinitelySpam(reason) => {
-            remove_warn_timeout_and_log(ctx, message.clone(), reason.as_str())
+            messaging::remove_message_and_log(&ctx, message.clone())
                 .await
                 .unwrap()
+        }
+        MessageClassification::DefinitelySpam(reason) => {
+            messaging::remove_warn_timeout_and_log(&ctx, message.clone(), reason.as_str())
+                .await
+                .unwrap()
+        }
+    }
+    if messaging::message_discusses_roadmaps(&message) {
+        if let Err(e) = handle_roadmap(ctx, message).await {
+            println!("Failed to create Roadmap due to {e}")
         }
     }
 }
@@ -298,22 +119,25 @@ async fn handle_message(ctx: Context, message: Message) {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg.channel_id != ChannelId::from(BOT_CHANNEL) {
-            if msg.channel_id == ChannelId::from(HONEY_POT_CHANNEL)
-                && msg.author.id != UserId::from(SPAM_EATER_ID)
-            {
-                delete_message(&ctx, &msg).await.unwrap();
-                log_ban(&ctx, msg.author.name.as_str()).await.unwrap();
-                ban_user(&ctx, &msg.guild_id.unwrap(), &msg.author.id)
+        if msg.channel_id != ChannelId::from(BOT_CHANNEL)
+            && msg.author.id != UserId::from(SPAM_EATER_ID)
+        {
+            if msg.channel_id == ChannelId::from(HONEY_POT_CHANNEL) {
+                messaging::delete_message(&ctx, &msg).await.unwrap();
+                messaging::log_ban(&ctx, msg.author.name.as_str())
+                    .await
+                    .unwrap();
+                messaging::ban_user(&ctx, &msg.guild_id.unwrap(), &msg.author.id)
                     .await
                     .unwrap();
             }
+            user_info::update_user_context(&ctx, &msg).await;
             match msg.member {
                 None => {
                     println!("Couldn't find MemberInfo for {:?}", msg.author);
                 }
                 Some(ref member_info) => {
-                    update_user_join_date(
+                    user_info::update_user_join_date(
                         &ctx,
                         &msg.author,
                         member_info.joined_at.unwrap().unix_timestamp(),
@@ -378,6 +202,8 @@ async fn main() {
     dotenv().ok();
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let openai_key = env::var("OPENAI_KEY").expect("Expected an OpenAI Key in the environment");
+    set_key(openai_key);
     // Set gateway intents, which decides what events the bot will be notified about
     let intents =
         GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILDS;
@@ -390,6 +216,7 @@ async fn main() {
     {
         let mut data = client.data.write().await;
         data.insert::<UserJoinDate>(Arc::new(RwLock::new(HashMap::default())));
+        data.insert::<UserContext>(Arc::new(RwLock::new(HashMap::default())));
     }
 
     tokio::spawn(async {
