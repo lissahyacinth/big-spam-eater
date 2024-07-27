@@ -136,13 +136,4 @@ mod tests {
     fn emit_prompt() {
         dbg!(build_message("I'd like a roadmap".to_string(), vec![], system_message_creation()));
     }
-
-    #[tokio::test]
-    async fn create_and_emit_roadmap() {
-        dotenv().ok();
-        let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-        let openai_key = env::var("OPENAI_KEY").expect("Expected an OpenAI Key in the environment");
-        set_key(openai_key);
-        dbg!(create_roadmap("Hi, I'd like a roadmap!".to_string(), vec![]).await.unwrap());
-    }
 }
