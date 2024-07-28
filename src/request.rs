@@ -76,6 +76,9 @@ async fn verify_request(request: String, reply: String) -> anyhow::Result<Verify
 }
 
 pub(crate) async fn answer_request(request: String) -> anyhow::Result<Option<String>> {
+    if request.trim().is_empty() {
+        return Ok(None);
+    }
     info!("Generating reply for request {}", request.as_str(),);
     let unverified_reply = create_reply(request.clone(), vec![]).await?;
     info!("Generated unverified reply {}", unverified_reply.as_str(),);

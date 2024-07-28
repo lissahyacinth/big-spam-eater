@@ -94,9 +94,25 @@ async fn reply_chunked(
 }
 
 async fn handle_request(ctx: &Context, message: &Message) -> anyhow::Result<()> {
-    let maybe_response = answer_request(message.content.as_str().replace("!request", "")).await?;
-    if let Some(response) = maybe_response {
-        reply_chunked(ctx, message.author.mention(), message.channel_id, response).await?;
+    let maybe_query_author = match message.content.to_lowercase().as_str() {
+        "!request" => message
+            .referenced_message
+            .as_ref()
+            .map(|msg| (msg.content.clone(), msg.author.clone())),
+        _ => Some((
+            message
+                .content
+                .replacen("!request", "", 1)
+                .trim()
+                .to_string(),
+            message.author.clone(),
+        )),
+    };
+
+    if let Some((query, author)) = maybe_query_author {
+        if let Some(response) = answer_request(query).await? {
+            reply_chunked(ctx, author.mention(), message.channel_id, response).await?;
+        }
     }
     Ok(())
 }
