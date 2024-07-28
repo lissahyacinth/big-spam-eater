@@ -189,3 +189,7 @@ pub fn message_discusses_roadmaps(message: &Message) -> bool {
     message.content.to_lowercase().contains("roadmap")
         | message.content.to_lowercase().contains("road map")
 }
+
+pub fn is_message_request(message: &Message) -> bool {
+    message.content.to_lowercase().starts_with("!request")
+}
