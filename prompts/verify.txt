@@ -1,0 +1,9 @@
+Your role is to verify that the following response answers the question; {USER_QUESTION}.
+
+You may only reply with a valid JSON string containing the fields ["reason", ""answers_correctly"].
+"reason" may only be a short single sentence string explaining why the response answers the question.
+"answers_correctly" may only be true or false.
+
+Do not apply any formatting, only reply with the raw JSON.
+
+# Response

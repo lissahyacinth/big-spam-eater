@@ -3,11 +3,13 @@ use std::env;
 use std::sync::Arc;
 
 use crate::chunking::chunk_string;
+use crate::request::answer_request;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
 use crate::user_info::retrieve_user_context;
 use dotenv::dotenv;
 use openai::set_key;
+use serenity::all::Mention;
 use serenity::async_trait;
 use serenity::builder::CreateMessage;
 use serenity::model::channel::Message;
@@ -23,9 +25,11 @@ use user_info::{UserContext, UserJoinDate};
 mod chunking;
 mod clean_messages;
 mod messaging;
+mod request;
 mod roadmaps;
 mod spam_detection;
 mod user_info;
+mod utilities;
 
 struct Handler;
 
@@ -74,24 +78,43 @@ async fn is_message_suspicious(
     }
 }
 
-async fn handle_roadmap(ctx: Context, message: Message) -> anyhow::Result<()> {
+async fn reply_chunked(
+    ctx: &Context,
+    user: Mention,
+    channel_id: ChannelId,
+    content: String,
+) -> anyhow::Result<()> {
+    let formatted_message = format!("Hi {}, \n {}", user, content);
+    for chunk in chunk_string(formatted_message.as_str(), 1_950) {
+        channel_id
+            .send_message(&ctx.http, CreateMessage::new().content(chunk))
+            .await?;
+    }
+    Ok(())
+}
+
+async fn handle_request(ctx: &Context, message: &Message) -> anyhow::Result<()> {
+    let maybe_response = answer_request(message.content.as_str().replace("!request", "")).await?;
+    if let Some(response) = maybe_response {
+        reply_chunked(ctx, message.author.mention(), message.channel_id, response).await?;
+    }
+    Ok(())
+}
+
+async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> {
     if is_message_roadmap_request(message.content.clone(), vec![])
         .await?
         .is_roadmap
     {
-        let user_context = retrieve_user_context(&ctx, &message).await;
+        let user_context = retrieve_user_context(ctx, message).await;
         let created_roadmap = create_roadmap(message.content.clone(), user_context).await?;
-        let formatted_message = format!(
-            "Hi {}, \n {}",
+        reply_chunked(
+            ctx,
             message.author.mention(),
-            created_roadmap.roadmap
-        );
-        for chunk in chunk_string(formatted_message.as_str(), 1_950) {
-            message
-                .channel_id
-                .send_message(&ctx.http, CreateMessage::new().content(chunk))
-                .await?;
-        }
+            message.channel_id,
+            created_roadmap.roadmap,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -123,8 +146,12 @@ async fn handle_message(ctx: Context, message: Message) {
                 .unwrap()
         }
     }
-    if messaging::message_discusses_roadmaps(&message) {
-        if let Err(e) = handle_roadmap(ctx, message).await {
+    if messaging::is_message_request(&message) {
+        if let Err(e) = handle_request(&ctx, &message).await {
+            error!("Failed to create reply due to {e}")
+        }
+    } else if messaging::message_discusses_roadmaps(&message) {
+        if let Err(e) = handle_roadmap(&ctx, &message).await {
             error!("Failed to create Roadmap due to {e}")
         }
     }
