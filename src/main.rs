@@ -3,6 +3,7 @@ use std::env;
 use std::sync::Arc;
 
 use crate::chunking::chunk_string;
+use crate::clean_messages::clean_message;
 use crate::request::answer_request;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
@@ -67,7 +68,11 @@ async fn is_message_suspicious(
                 if classification.is_spam {
                     MessageClassification::DefinitelySpam(classification.reason)
                 } else {
-                    info!("Message hit filter, not considered suspicious.");
+                    info!(
+                        "Message ({}) hit filter, not considered suspicious due to {}",
+                        clean_message(message.content.as_str()),
+                        classification.reason
+                    );
                     MessageClassification::Normal
                 }
             }
