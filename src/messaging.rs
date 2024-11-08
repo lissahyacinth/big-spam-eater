@@ -193,3 +193,7 @@ pub fn message_discusses_roadmaps(message: &Message) -> bool {
 pub fn is_message_request(message: &Message) -> bool {
     message.content.to_lowercase().starts_with("!request")
 }
+
+pub fn is_message_ask(message: &Message) -> bool {
+    message.content.to_lowercase().starts_with("!ask")
+}

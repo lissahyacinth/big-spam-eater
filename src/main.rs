@@ -140,6 +140,19 @@ async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> 
     Ok(())
 }
 
+async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
+    let response = "Don't ask to ask, just ask! \nhttps://dontasktoask.com/";
+    
+    reply_chunked(
+        ctx,
+        message.author.mention(),
+        message.channel_id,
+        response.to_string(),
+    ).await?;
+
+    Ok(())
+}
+
 async fn handle_message(ctx: Context, message: Message) {
     match is_message_suspicious(
         &message,
@@ -174,6 +187,10 @@ async fn handle_message(ctx: Context, message: Message) {
     } else if messaging::message_discusses_roadmaps(&message) {
         if let Err(e) = handle_roadmap(&ctx, &message).await {
             error!("Failed to create Roadmap due to {e}")
+        }
+    } else if messaging::is_message_ask(&message) {
+        if let Err(e) = handle_ask(&ctx, &message).await {
+            error!("Failed to link dontask due to {e}")
         }
     }
 }
