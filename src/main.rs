@@ -143,13 +143,14 @@ async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> 
 }
 
 async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
-    let response = respond_ask().await?;
-
-    reply_chunked(ctx, message.author.mention(), message.channel_id, response).await?;
-
-    Ok(())
+    reply_chunked(
+        ctx,
+        message.author.mention(),
+        message.channel_id,
+        "Don't ask to ask, just ask! \nhttps://dontasktoask.com/".to_string(),
+    )
+    .await
 }
-
 async fn handle_message(ctx: Context, message: Message) {
     match is_message_suspicious(
         &message,
