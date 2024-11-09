@@ -141,14 +141,25 @@ async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> 
 }
 
 async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
-    reply_chunked(
-        ctx,
-        message.author.mention(),
-        message.channel_id,
-        "Don't ask to ask, just ask! \nhttps://dontasktoask.com/".to_string(),
-    )
-    .await
+    let response = "Don't ask to ask, just ask! \nhttps://dontasktoask.com/".to_string();
+
+    if let Some(ref message_reply) = message.referenced_message {
+        reply_chunked(
+            ctx,
+            message_reply.author.mention(),
+            message_reply.channel_id,
+            response,
+        )
+        .await?;
+    } else {
+        message
+            .channel_id
+            .send_message(&ctx.http, CreateMessage::new().content(response))
+            .await?;
+    }
+    Ok(())
 }
+
 async fn handle_message(ctx: Context, message: Message) {
     match is_message_suspicious(
         &message,

@@ -15,4 +15,6 @@ The prompt used is around ~186 tokens. Assuming an average message size of 50 to
 The machine picked is an EC2-Mini, and forms the majority of the hosting cost. You could likely drop this significantly by using spot pricing, but it currently works out to around $0.26 per day.
 
 ## Feature Creep
-The bot also provides one-sentence answers to user queries upon request, but this feature was just for fun. 
+The bot also provides one-sentence answers to user queries upon request, but this feature was just for fun.
+
+Added a command (`!ask`) to help discourage meta-questions by linking to [Don't ask to ask, just ask](https://dontasktoask.com/), promoting more effective community interactions.
