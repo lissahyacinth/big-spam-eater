@@ -188,7 +188,7 @@ async fn handle_message(ctx: Context, message: Message) {
         }
     } else if messaging::is_message_ask(&message) {
         if let Err(e) = handle_ask(&ctx, &message).await {
-            error!("Failed to link dontask due to {e}")
+            error!("Failed to link to don't ask to ask due to {e}")
         }
     }
 }
