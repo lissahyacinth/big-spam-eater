@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 
-use crate::ask::respond_ask;
 use crate::chunking::chunk_string;
 use crate::clean_messages::clean_message;
 use crate::request::answer_request;
@@ -24,7 +23,6 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 use user_info::{UserContext, UserJoinDate};
 
-mod ask;
 mod chunking;
 mod clean_messages;
 mod messaging;
