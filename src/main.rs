@@ -144,9 +144,16 @@ async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
     let response = "Don't ask to ask, just ask! \nhttps://dontasktoask.com/".to_string();
 
     if let Some(message_reply) = message.referenced_message.clone() {
-        reply_chunked(ctx, message_reply.author.mention(), message_reply.channel_id, response).await?;
+        reply_chunked(
+            ctx,
+            message_reply.author.mention(),
+            message_reply.channel_id,
+            response,
+        )
+        .await?;
     } else {
-        message.channel_id
+        message
+            .channel_id
             .send_message(&ctx.http, CreateMessage::new().content(response))
             .await?;
     }
