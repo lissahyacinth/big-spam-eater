@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 
+use crate::ask::respond_ask;
 use crate::chunking::chunk_string;
 use crate::clean_messages::clean_message;
 use crate::request::answer_request;
-use crate::ask::respond_ask;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
 use crate::user_info::retrieve_user_context;
@@ -24,11 +24,11 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 use user_info::{UserContext, UserJoinDate};
 
+mod ask;
 mod chunking;
 mod clean_messages;
 mod messaging;
 mod request;
-mod ask;
 mod roadmaps;
 mod spam_detection;
 mod user_info;
@@ -144,13 +144,8 @@ async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> 
 
 async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
     let response = respond_ask().await?;
-    
-    reply_chunked(
-        ctx,
-        message.author.mention(),
-        message.channel_id,
-        response,
-    ).await?;
+
+    reply_chunked(ctx, message.author.mention(), message.channel_id, response).await?;
 
     Ok(())
 }
