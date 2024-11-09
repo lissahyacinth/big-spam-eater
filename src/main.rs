@@ -143,7 +143,7 @@ async fn handle_roadmap(ctx: &Context, message: &Message) -> anyhow::Result<()> 
 async fn handle_ask(ctx: &Context, message: &Message) -> anyhow::Result<()> {
     let response = "Don't ask to ask, just ask! \nhttps://dontasktoask.com/".to_string();
 
-    if let Some(message_reply) = message.referenced_message.clone() {
+    if let Some(ref message_reply) = message.referenced_message {
         reply_chunked(
             ctx,
             message_reply.author.mention(),
