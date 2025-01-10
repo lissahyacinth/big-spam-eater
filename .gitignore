@@ -5,4 +5,4 @@ deployment/gcp/.terraform*
 deployment/gcp/terraform.tfstate.*
 deployment/gcp/.terraform/*
 deployment/gcp/backend.tf
-.env
+/.env

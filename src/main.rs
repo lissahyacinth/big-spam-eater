@@ -1,16 +1,13 @@
-use std::collections::HashMap;
-use std::env;
-use std::sync::Arc;
-
 use crate::chunking::chunk_string;
 use crate::clean_messages::clean_message;
 use crate::request::answer_request;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
 use crate::user_info::retrieve_user_context;
+use chrono::Duration;
 use dotenv::dotenv;
 use openai::set_key;
-use serenity::all::Mention;
+use serenity::all::{EmojiId, Mention, Reaction, ReactionType, Timestamp};
 use serenity::async_trait;
 use serenity::builder::CreateMessage;
 use serenity::model::channel::Message;
@@ -18,9 +15,14 @@ use serenity::model::event::MessageUpdateEvent;
 use serenity::model::gateway::Ready;
 use serenity::model::id::{ChannelId, UserId};
 use serenity::prelude::*;
+use std::collections::HashMap;
+use std::env;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tracing::{error, info};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use user_info::{UserContext, UserJoinDate};
 
 mod chunking;
@@ -44,6 +46,7 @@ const VAGUELY_OKAY_WEBSITES: [&str; 7] = [
     "usc.edu",
 ];
 
+const BLUNDER_EMOJI_ID: u64 = 1134914979078864926;
 const BOT_CHANNEL: u64 = 1091681853603324047;
 const HONEY_POT_CHANNEL: u64 = 889466095810011137;
 const SPAM_EATER_ID: u64 = 1091478027264868422;
@@ -248,6 +251,59 @@ impl EventHandler for Handler {
         }
     }
 
+    async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        if let ReactionType::Custom {
+            animated: _,
+            id,
+            name: _,
+        } = &reaction.emoji
+        {
+            if *id == BLUNDER_EMOJI_ID {
+                if let Ok(reacting_users) = reaction
+                    .channel_id
+                    .reaction_users(
+                        &ctx,
+                        reaction.message_id,
+                        EmojiId::new(BLUNDER_EMOJI_ID),
+                        Some(5),
+                        None,
+                    )
+                    .await
+                {
+                    info!(
+                        "There are {} users reacting to this message with given ID {}",
+                        reacting_users.len(),
+                        reaction.message_id
+                    );
+                    if reacting_users.len() >= 4 {
+                        let timeout_until = Timestamp::from_unix_timestamp(
+                            reaction.message_id.created_at().unix_timestamp()
+                                + Duration::minutes(15).num_seconds(),
+                        )
+                        .unwrap();
+                        if timeout_until > Timestamp::now() {
+                            info!(
+                                "Timing out {} until {}",
+                                &reaction.message_author_id.unwrap(),
+                                timeout_until
+                            );
+                            if let Err(e) = messaging::timeout_user(
+                                &ctx,
+                                &reaction.guild_id.unwrap(),
+                                &reaction.message_author_id.unwrap(),
+                                timeout_until,
+                            )
+                            .await
+                            {
+                                error!("Failed to timeout user due to {e}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     async fn ready(&self, _: Context, ready: Ready) {
         info!("{} is connected!", ready.user.name);
     }
@@ -280,14 +336,19 @@ async fn start_health_check() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let openai_key = env::var("OPENAI_KEY").expect("Expected an OpenAI Key in the environment");
     set_key(openai_key);
     // Set gateway intents, which decides what events the bot will be notified about
-    let intents =
-        GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILDS;
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILDS
+        | GatewayIntents::GUILD_MESSAGE_REACTIONS;
 
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)

@@ -122,32 +122,28 @@ pub async fn ban_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> seren
         .await
 }
 
-async fn timeout_user(ctx: &Context, guild_id: &GuildId, user: &UserId) -> serenity::Result<()> {
+pub(crate) async fn timeout_user(
+    ctx: &Context,
+    guild_id: &GuildId,
+    user: &UserId,
+    until: Timestamp,
+) -> serenity::Result<()> {
     guild_id
         .member(ctx, user)
         .await?
-        .disable_communication_until_datetime(
-            ctx,
-            Timestamp::from_unix_timestamp(
-                Timestamp::now().unix_timestamp() + Duration::days(1).num_seconds(),
-            )
-            .unwrap(),
-        )
+        .disable_communication_until_datetime(ctx, until)
         .await
 }
 
 pub async fn remove_message_and_log(ctx: &Context, message: Message) -> anyhow::Result<()> {
-    warn_user_generic(ctx, message.channel_id, &message.author)
-        .await
-        .unwrap();
+    warn_user_generic(ctx, message.channel_id, &message.author).await?;
     ctx.http
         .delete_message(
             message.channel_id,
             message.id,
             Some("Updated message with banned content"),
         )
-        .await
-        .unwrap();
+        .await?;
     log_actions(
         ctx,
         message.content.as_str(),
@@ -171,9 +167,17 @@ pub async fn remove_warn_timeout_and_log(
             message.id,
             Some("Message with banned content"),
         )
-        .await
-        .unwrap();
-    timeout_user(ctx, &message.guild_id.unwrap(), &message.author.id).await?;
+        .await?;
+    timeout_user(
+        ctx,
+        &message.guild_id.unwrap(),
+        &message.author.id,
+        Timestamp::from_unix_timestamp(
+            Timestamp::now().unix_timestamp() + Duration::days(1).num_seconds(),
+        )
+        .unwrap(),
+    )
+    .await?;
     log_actions(
         ctx,
         message.content.as_str(),
