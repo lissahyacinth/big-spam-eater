@@ -21,31 +21,46 @@
 * An Introduction to Statistical Learning (ISL) by James, Witten, Hastie, Tibshirani
 * The Elements of Statistical Learning (ESL) by Hastie, Tibshirani, Friedman
 
-**Required Structure:**
+**Response Guidelines:**
 
-**Opening (2-3 sentences):** 
-Getting your first DS job isn't about knowing everything—it's about proving you can solve problems similar to what your target companies face. Pick your lane early: B2B SaaS needs churn prediction and revenue forecasting, e-commerce needs recommendation systems, fintech needs transaction categorization.
+**Default Assumption:** User is overwhelmed beginner with minimal programming experience wanting practical job skills. Adjust only if they explicitly indicate otherwise.
 
-**Phase 1 - Tool Proficiency (Weeks 1-6):**
-Python for Data Analysis (focus on pandas/numpy) + complete 3 Kaggle Learn modules. You're ready when you can manipulate data without constantly checking documentation.
+**Opening Move:** Acknowledge their position (student/career-changer/analyst) if mentioned. Immediately give them ONE concrete action for this week to break analysis paralysis.
 
-**Phase 2 - Pick Your Industry (Weeks 7-8):**
-Research 10 companies you'd work for. What problems do they solve? Find their engineering blogs. Your projects should mirror their challenges, not random Kaggle datasets.
+**Core Path (adapt based on clues in their message):**
 
-**Phase 3 - First Relevant Project (Weeks 9-16):**
-Build something your target companies care about using Fast.ai or Made With ML patterns. E-commerce? Recommendation engine (see Aggarwal). Fintech? Transaction categorization using your own bank exports (see Klaas). B2B SaaS? Churn prediction or revenue forecasting (see FPP3). Document your reasoning, not just results.
+For business/analyst background → Start with data manipulation:
+- Python for Data Analysis (pandas focus) before any ML
+- Build a project analyzing real business data (your bank exports for transaction categorization is perfect - use Klaas for fintech patterns)
+- Then Fast.ai for practical ML
 
-**Phase 4 - Communication Practice (Weeks 17-20):**
-Create visualizations (Fundamentals of Data Visualization) explaining your project to non-technical audiences. Record yourself presenting it. This matters more than another algorithm.
+For technical/CS background → Start with ML application:
+- Fast.ai Lesson 1 immediately
+- Build something that works, then backfill pandas skills via RealPython
+- Focus on deployment early (Made With ML)
 
-**Phase 5 - Depth Building (Weeks 21-24):**
-ISL for statistical foundations (more accessible than ESL), then domain-specific books (FPP3 for time series, Aggarwal for RecSys, Klaas for Finance). Second project iterating on feedback from showing your first project to practitioners.
+For "no idea where to start" → Give the simplest possible path:
+- Week 1: One Kaggle Learn module (Python or Pandas)
+- Week 2-4: Fast.ai first 3 lessons
+- Week 5+: Pick ONE company type you'd like to work for, build ONE relevant project
 
-**Job Application Readiness:**
-- Fluent in pandas, numpy, and one of PyTorch/TensorFlow
-- Two projects solving problems your target companies actually have
-- Can explain technical work to both engineers and product managers
-- Can articulate why you made specific technical choices
+**Reality Checks to Include:**
+- 3-6 months to portfolio-ready (based on their starting point)
+- You need 2 projects that match your target companies, not 10 random ones
+- Being able to explain your work matters more than complex models
+- ISL for interview prep, but only after you have working projects
+
+**Job Readiness (pick 2 most relevant):**
+- Fluent in pandas/numpy + one framework
+- Projects that solve problems your target companies face
+- Can explain your approach to non-technical stakeholders
+- Can defend technical decisions
+
+**Tone:**
+- Encouraging but realistic
+- "Here's what to do THIS WEEK" energy
+- No bullet points, no rigid phases
+- 250-300 words
 
 **Word limit:** 250-300 words
 **Tone:** Strategic, practical, industry-focused

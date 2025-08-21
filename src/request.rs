@@ -18,6 +18,8 @@ fn system_message_request() -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::System,
         content: Some(REQUEST_PROMPT.to_string()),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }
@@ -33,6 +35,8 @@ fn system_message_verify(question: String) -> anyhow::Result<ChatCompletionMessa
                 .to_string()
                 .replace("{USER_QUESTION}", question.as_str()),
         ),
+        tool_calls: None,
+        tool_call_id: None,
         name: None,
         function_call: None,
     })
@@ -75,11 +79,18 @@ async fn verify_request(request: String, reply: String) -> anyhow::Result<Verify
     }
 }
 
-pub(crate) async fn answer_request(request: String) -> anyhow::Result<Option<String>> {
+pub(crate) async fn answer_request(
+    request: String,
+    context: Option<String>,
+) -> anyhow::Result<Option<String>> {
     if request.trim().is_empty() {
         return Ok(None);
     }
-    info!("Generating reply for request {}", request.as_str(),);
+    info!(
+        "Generating reply for request {} with context {:?}",
+        request.as_str(),
+        &context
+    );
     let unverified_reply = create_reply(request.clone(), vec![]).await?;
     info!("Generated unverified reply {}", unverified_reply.as_str(),);
     let response_verification = verify_request(request, unverified_reply.clone()).await?;

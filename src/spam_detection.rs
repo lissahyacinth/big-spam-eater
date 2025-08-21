@@ -35,6 +35,8 @@ fn system_message() -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::System,
         content: Some(SPAM_PROMPT.to_string()),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }
@@ -44,6 +46,8 @@ fn user_message(message: String) -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::User,
         content: Some(message),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }

@@ -1,5 +1,5 @@
 use crate::clean_messages::clean_message;
-use crate::{BOT_CHANNEL, VAGUELY_OKAY_WEBSITES};
+use crate::consts::{BOT_CHANNEL, SPAM_EATER_ID, VAGUELY_OKAY_WEBSITES};
 use chrono::{Duration, TimeZone, Utc};
 use serenity::all::{
     ChannelId, Context, CreateMessage, GuildId, Mentionable, Message, Timestamp, User, UserId,
@@ -195,7 +195,13 @@ pub fn message_discusses_roadmaps(message: &Message) -> bool {
 }
 
 pub fn is_message_request(message: &Message) -> bool {
-    message.content.to_lowercase().starts_with("!request")
+    let spam_eater_user_id = UserId::from(SPAM_EATER_ID);
+    message
+        .mentions
+        .iter()
+        .map(|user| user.id)
+        .any(|id| id == spam_eater_user_id)
+        | message.content.to_lowercase().starts_with("!request")
 }
 
 pub fn is_message_ask(message: &Message) -> bool {

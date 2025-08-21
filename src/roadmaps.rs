@@ -44,6 +44,8 @@ fn system_message_detection() -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::System,
         content: Some(DETECT_ROADMAP_PROMPT.to_string()),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }
@@ -53,6 +55,8 @@ fn system_message_creation() -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::System,
         content: Some(CREATE_ROADMAP_PROMPT.to_string()),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }
@@ -62,6 +66,8 @@ fn user_message(message: String) -> ChatCompletionMessage {
         role: ChatCompletionMessageRole::User,
         content: Some(message),
         name: None,
+        tool_calls: None,
+        tool_call_id: None,
         function_call: None,
     }
 }

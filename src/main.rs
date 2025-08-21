@@ -1,11 +1,13 @@
 use crate::chunking::chunk_string;
 use crate::clean_messages::clean_message;
+use crate::consts::{BLUNDER_EMOJI_ID, BOT_CHANNEL, HONEY_POT_CHANNEL, SPAM_EATER_ID};
 use crate::request::answer_request;
 use crate::roadmaps::{create_roadmap, is_message_roadmap_request};
 use crate::spam_detection::classify_message_spam;
 use crate::user_info::retrieve_user_context;
 use chrono::Duration;
 use dotenv::dotenv;
+#[allow(deprecated)]
 use openai::set_key;
 use serenity::all::{EmojiId, Mention, Reaction, ReactionType, Timestamp};
 use serenity::async_trait;
@@ -27,29 +29,14 @@ use user_info::{UserContext, UserJoinDate};
 
 mod chunking;
 mod clean_messages;
+mod consts;
 mod messaging;
 mod request;
 mod roadmaps;
 mod spam_detection;
 mod user_info;
 mod utilities;
-
 struct Handler;
-
-const VAGUELY_OKAY_WEBSITES: [&str; 7] = [
-    "github.com",
-    "bitbucket.com",
-    "stackoverflow.com",
-    "pastebin.com",
-    "kaggle.com",
-    "mit.edu",
-    "usc.edu",
-];
-
-const BLUNDER_EMOJI_ID: u64 = 1134914979078864926;
-const BOT_CHANNEL: u64 = 1091681853603324047;
-const HONEY_POT_CHANNEL: u64 = 889466095810011137;
-const SPAM_EATER_ID: u64 = 1091478027264868422;
 
 #[derive(Debug)]
 enum MessageClassification {
@@ -102,23 +89,34 @@ async fn reply_chunked(
 }
 
 async fn handle_request(ctx: &Context, message: &Message) -> anyhow::Result<()> {
-    let maybe_query_author = match message.content.to_lowercase().as_str() {
-        "!request" => message
-            .referenced_message
-            .as_ref()
-            .map(|msg| (msg.content.clone(), msg.author.clone())),
+    // If the request is replying to someone, assume the reply target is the correct query.
+    let maybe_query_author = match message.referenced_message {
+        Some(ref referenced_message) => Some((
+            format!(
+                "{}: {}",
+                referenced_message.author.name,
+                referenced_message
+                    .content
+                    .replacen("!request", "", 1)
+                    .trim()
+            ),
+            // Additional context from the caller.
+            Some(message.content.to_string()),
+            referenced_message.author.clone(),
+        )),
         _ => Some((
-            message
-                .content
-                .replacen("!request", "", 1)
-                .trim()
-                .to_string(),
+            format!(
+                "{}: {}",
+                message.author.name,
+                message.content.replacen("!request", "", 1).trim()
+            ),
+            None,
             message.author.clone(),
         )),
     };
 
-    if let Some((query, author)) = maybe_query_author {
-        if let Some(response) = answer_request(query).await? {
+    if let Some((query, context, author)) = maybe_query_author {
+        if let Some(response) = answer_request(query, context).await? {
             reply_chunked(ctx, author.mention(), message.channel_id, response).await?;
         }
     }
@@ -343,6 +341,7 @@ async fn main() {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let openai_key = env::var("OPENAI_KEY").expect("Expected an OpenAI Key in the environment");
+    #[allow(deprecated)]
     set_key(openai_key);
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES
