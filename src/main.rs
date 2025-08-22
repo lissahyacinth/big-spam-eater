@@ -116,8 +116,11 @@ async fn handle_request(ctx: &Context, message: &Message) -> anyhow::Result<()> 
     };
 
     if let Some((query, context, author)) = maybe_query_author {
-        if let Some(response) = answer_request(query, context).await? {
-            reply_chunked(ctx, author.mention(), message.channel_id, response).await?;
+        // Ensure BSE doesn't reply to itself.
+        if author.id != SPAM_EATER_ID {
+            if let Some(response) = answer_request(query, context).await? {
+                reply_chunked(ctx, author.mention(), message.channel_id, response).await?;
+            }
         }
     }
     Ok(())
