@@ -1,3 +1,4 @@
+use crate::consts::MODEL_USED;
 use crate::utilities;
 use anyhow::bail;
 use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageRole};
@@ -44,7 +45,7 @@ fn system_message_verify(question: String) -> anyhow::Result<ChatCompletionMessa
 
 async fn create_reply(message: String, context: Vec<String>) -> anyhow::Result<String> {
     let chat_completion = ChatCompletion::builder(
-        "gpt-4o-mini",
+        MODEL_USED,
         utilities::build_message(message, context, system_message_request(), 0, 1024),
     )
     .create()
@@ -59,7 +60,7 @@ async fn create_reply(message: String, context: Vec<String>) -> anyhow::Result<S
 
 async fn verify_request(request: String, reply: String) -> anyhow::Result<VerifyReply> {
     let chat_completion = ChatCompletion::builder(
-        "gpt-4o-mini",
+        MODEL_USED,
         utilities::build_message(
             reply,
             vec![],

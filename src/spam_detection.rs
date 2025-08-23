@@ -1,3 +1,4 @@
+use crate::consts::MODEL_USED;
 use anyhow::bail;
 use lazy_static::lazy_static;
 use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageRole};
@@ -71,7 +72,7 @@ pub(crate) async fn classify_message_spam(
     message: String,
     context: Vec<String>,
 ) -> anyhow::Result<IsSpamResult> {
-    let chat_completion = ChatCompletion::builder("gpt-4o-mini", build_message(message, context))
+    let chat_completion = ChatCompletion::builder(MODEL_USED, build_message(message, context))
         .create()
         .await?;
     let returned_message = chat_completion.choices.first().unwrap().message.clone();

@@ -1,9 +1,9 @@
+use crate::consts::MODEL_USED;
 use anyhow::bail;
 use lazy_static::lazy_static;
 use openai::chat::{ChatCompletion, ChatCompletionMessage, ChatCompletionMessageRole};
 use serde::Deserialize;
 use tracing::info;
-
 lazy_static! {
     static ref ROADMAP_CONFIG: RoadmapConfig = RoadmapConfig::default();
 }
@@ -96,7 +96,7 @@ pub(crate) async fn is_message_roadmap_request(
     context: Vec<String>,
 ) -> anyhow::Result<RequestingRoadmap> {
     let chat_completion = ChatCompletion::builder(
-        "gpt-4o-mini",
+        MODEL_USED,
         build_message(message.clone(), context, system_message_detection()),
     )
     .create()
@@ -128,7 +128,7 @@ pub(crate) async fn create_roadmap(
     context: Vec<String>,
 ) -> anyhow::Result<RoadmapProvided> {
     let chat_completion = ChatCompletion::builder(
-        "gpt-4o-mini",
+        MODEL_USED,
         build_message(message, context, system_message_creation()),
     )
     .create()
